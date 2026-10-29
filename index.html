@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="One-minute-per-question focus timer for MCQ practice.">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}*,*::before,*::after{box-sizing:border-box}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>MCQ Pace Timer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Martian+Mono:wdth,wght@75..112.5,200..600&display=swap">
+<style>
+/* Layout: a chronograph dial you hit with Enter, an instrument panel (pace chart + log) beside it; stacks on phones.
+   Single black look in every theme: neutral greys, white sweep, amber for the last 10 s, red for overtime. */
+:root {
+  --bg: #090909;
+  --surface: #111111;
+  --surface-2: #1a1a1a;
+  --fg: #f0f0ee;
+  --muted: #8a8a88;
+  --dim: #2e2e2e;
+  --line: #222222;
+  --accent: #f4f4f2;
+  --warn: #f2a93b;
+  --over: #ff4747;
+  --over-soft: #1f0c0c;
+  --f-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-label: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  --f-digit: "Martian Mono", "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { min-height: 100%; }
+[hidden] { display: none !important; }
+body {
+  background: radial-gradient(1200px 700px at 30% -10%, #151515 0%, var(--bg) 60%) var(--bg);
+  color: var(--fg); font-family: var(--f-ui); font-size: 15px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 40px;
+}
+/* film grain */
+body::after {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 50; opacity: .06;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+#flash { position: fixed; inset: 0; pointer-events: none; z-index: 40; background: radial-gradient(circle at 50% 40%, var(--over) 0%, transparent 70%); opacity: 0; }
+#flash.go { animation: flash .9s ease-out; }
+@keyframes flash { 0% { opacity: .55; } 100% { opacity: 0; } }
+
+.wrap { max-width: 1000px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 780px) { .wrap { grid-template-columns: minmax(0, 1fr); } }
+
+header.top { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: end; gap: 12px; flex-wrap: wrap; }
+.brand { display: grid; gap: 4px; }
+h1 { margin: 0; font-size: 1.1rem; font-weight: 600; letter-spacing: .02em; }
+.session { font-family: var(--f-label); font-size: .78rem; color: var(--muted); letter-spacing: .04em; }
+.hint { color: var(--muted); font-size: .85rem; }
+kbd { font-family: var(--f-label); font-size: .76rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 1px 6px; background: var(--surface); color: var(--fg); }
+
+/* Focus mode: while a question runs, everything but the dial recedes */
+.recede { transition: opacity .5s ease; }
+body.running .recede { opacity: .22; }
+body.running .recede:hover, body.running .recede:focus-within { opacity: 1; }
+
+/* Dial */
+.stage {
+  all: unset; box-sizing: border-box; cursor: pointer; display: grid; place-items: center; gap: 16px; width: 100%;
+  background: linear-gradient(180deg, var(--surface-2), var(--surface)); border: 1px solid var(--line); border-radius: 18px;
+  padding: 30px 16px 26px; transition: background-color .3s, border-color .3s, box-shadow .3s;
+  -webkit-tap-highlight-color: transparent; user-select: none; position: relative;
+  box-shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 30px 60px -30px rgba(0,0,0,.8);
+}
+.stage:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.stage.over { border-color: color-mix(in srgb, var(--over) 55%, var(--line)); background: linear-gradient(180deg, var(--over-soft), var(--surface)); }
+.dial { position: relative; width: min(330px, 80vw); aspect-ratio: 1; max-width: 100%; color: var(--accent); transition: transform .12s ease, color .4s; }
+.stage.warn .dial { color: var(--warn); }
+.stage.over .dial { color: var(--over); }
+.stage:active .dial, .dial.pressed { transform: scale(.975); }
+.dial svg { width: 100%; height: 100%; display: block; overflow: visible; }
+.tk { stroke: var(--dim); stroke-width: 2; stroke-linecap: round; transition: stroke .25s; }
+.tk.major { stroke-width: 3; }
+.tk.on { stroke: currentColor; }
+.arc-track { fill: none; stroke: var(--line); stroke-width: 3; }
+.arc { fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; filter: drop-shadow(0 0 6px currentColor); }
+.tip { fill: currentColor; filter: drop-shadow(0 0 8px currentColor); }
+.numerals text { fill: var(--muted); font-family: var(--f-label); font-size: 10px; text-anchor: middle; dominant-baseline: central; letter-spacing: .05em; }
+.dial.beat .glow { animation: beat .9s ease-out; }
+.glow { fill: currentColor; opacity: 0; }
+@keyframes beat { 0% { opacity: .16; } 100% { opacity: 0; } }
+.readout { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 6px; }
+.qlabel { font-family: var(--f-label); font-size: .72rem; text-transform: uppercase; letter-spacing: .2em; color: var(--muted); }
+.time {
+  font-family: var(--f-digit); font-stretch: 75%; font-weight: 300; color: var(--fg);
+  font-size: clamp(3rem, 13vw, 4.6rem); line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.03em;
+  transition: color .3s;
+}
+.time small { font-size: .42em; color: var(--muted); font-weight: 300; margin-left: 2px; }
+.stage.warn .time { color: var(--warn); }
+.stage.over .time, .stage.over .time small { color: var(--over); text-shadow: 0 0 24px color-mix(in srgb, var(--over) 40%, transparent); }
+.overby { font-family: var(--f-label); font-size: .82rem; color: var(--over); min-height: 1.2em; font-variant-numeric: tabular-nums; letter-spacing: .04em; }
+.action { font-size: .92rem; color: var(--muted); }
+.action b { color: var(--fg); font-weight: 600; }
+
+.opts { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 14px; color: var(--muted); font-size: .86rem; }
+.opts .toggles { display: flex; gap: 18px; flex-wrap: wrap; }
+.opts label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+.opts input { accent-color: var(--accent); width: 16px; height: 16px; }
+.opts .limit { font-family: var(--f-label); font-size: .78rem; letter-spacing: .04em; }
+
+/* Instrument panel */
+.panel { display: grid; gap: 16px; min-width: 0; }
+.card { background: linear-gradient(180deg, var(--surface-2), var(--surface)); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 1px 0 rgba(255,255,255,.04) inset; }
+.avg { padding: 18px 20px; display: grid; gap: 14px; }
+.lbl { font-family: var(--f-label); font-size: .7rem; text-transform: uppercase; letter-spacing: .18em; color: var(--muted); }
+.avg-main { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.avg-main .val { font-family: var(--f-digit); font-stretch: 75%; font-weight: 300; font-size: 2.6rem; line-height: 1; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.avg-main .val.over { color: var(--over); }
+.chart { display: grid; gap: 6px; }
+.chart svg { width: 100%; height: 76px; display: block; }
+.chart .bar { fill: var(--accent); opacity: .8; }
+.chart .bar.over { fill: var(--over); opacity: 1; }
+.chart .limitln { stroke: var(--over); stroke-width: 1; stroke-dasharray: 4 4; opacity: .7; }
+.chart .avgln { stroke: var(--muted); stroke-width: 1; }
+.chart .base { stroke: var(--line); stroke-width: 1; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .72rem; color: var(--muted); font-family: var(--f-label); }
+.legend i { display: inline-block; width: 14px; height: 0; border-top: 1px solid var(--muted); vertical-align: middle; margin-right: 6px; }
+.legend i.lim { border-top: 1px dashed var(--over); }
+.chart-empty { height: 76px; display: grid; place-items: center; border: 1px dashed var(--line); border-radius: 10px; color: var(--muted); font-size: .82rem; text-align: center; padding: 0 12px; }
+.stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+@media (max-width: 420px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.stats div { display: grid; gap: 2px; }
+.stats span { font-size: .72rem; color: var(--muted); }
+.stats b { font-family: var(--f-label); font-weight: 500; font-variant-numeric: tabular-nums; font-size: 1rem; }
+.stats b.over { color: var(--over); }
+
+.log { overflow: hidden; }
+.log-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--line); gap: 10px; }
+.clear { font: inherit; font-size: .84rem; border: 1px solid var(--line); background: transparent; color: var(--fg); border-radius: 8px; padding: 6px 12px; cursor: pointer; transition: border-color .2s, color .2s, background-color .2s; }
+.clear:hover { border-color: var(--over); color: var(--over); }
+.clear.armed { background: var(--over); border-color: var(--over); color: #fff; }
+.clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+ol { list-style: none; margin: 0; padding: 0; max-height: 380px; overflow-y: auto; }
+li { display: grid; grid-template-columns: 3.2em minmax(0, 1fr) 4.4em 1.8em; align-items: center; gap: 10px; padding: 9px 12px 9px 16px; border-bottom: 1px solid var(--line); }
+li:last-child { border-bottom: 0; }
+li.new { animation: slidein .35s ease-out; }
+@keyframes slidein { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+li .n { font-family: var(--f-label); color: var(--muted); font-size: .82rem; }
+li .bar { height: 4px; border-radius: 2px; background: var(--dim); position: relative; overflow: hidden; }
+li .bar i { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 2px; }
+li.over .bar i { background: var(--over); box-shadow: 0 0 8px var(--over); }
+li .t { font-family: var(--f-label); text-align: right; font-size: .92rem; font-variant-numeric: tabular-nums; }
+li.over .t { color: var(--over); font-weight: 500; }
+li .del { all: unset; cursor: pointer; color: var(--muted); text-align: center; border-radius: 4px; font-size: 1.05rem; line-height: 1; padding: 2px 0; }
+li .del:hover { color: var(--over); }
+li .del:focus-visible { outline: 2px solid var(--accent); }
+.empty { padding: 22px 16px; color: var(--muted); font-size: .9rem; line-height: 1.5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .stage, .dial, .tk, .recede, .time { transition: none; }
+  #flash.go, .dial.beat .glow, li.new { animation: none; }
+}
+</style>
+
+</head>
+<body>
+<div id="flash"></div>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <h1>MCQ Pace Timer</h1>
+      <div class="session" id="session">New session</div>
+    </div>
+    <div class="hint recede"><kbd>Enter</kbd> or click the dial · <kbd>Esc</kbd> discards the running question</div>
+  </header>
+
+  <section>
+    <button class="stage" id="stage" type="button">
+      <div class="dial" id="dial">
+        <svg viewBox="0 0 300 300" aria-hidden="true">
+          <defs>
+            <radialGradient id="face" cx="50%" cy="42%" r="60%">
+              <stop offset="0%" style="stop-color: var(--surface-2)"></stop>
+              <stop offset="100%" style="stop-color: var(--bg)"></stop>
+            </radialGradient>
+          </defs>
+          <circle cx="150" cy="150" r="108" fill="url(#face)"></circle>
+          <circle class="glow" cx="150" cy="150" r="108"></circle>
+          <g id="ticks"></g>
+          <g class="numerals" id="numerals"></g>
+          <circle class="arc-track" cx="150" cy="150" r="112"></circle>
+          <circle class="arc" id="arc" cx="150" cy="150" r="112" transform="rotate(-90 150 150)"></circle>
+          <circle class="tip" id="tip" r="4.5" cx="150" cy="38"></circle>
+        </svg>
+        <div class="readout">
+          <div class="qlabel" id="qlabel">Question 1</div>
+          <div class="time" id="time">0:00<small>.0</small></div>
+          <div class="overby" id="overby"></div>
+        </div>
+      </div>
+      <div class="action" id="action">Press <b>Enter</b> to start</div>
+    </button>
+    <div class="opts recede">
+      <div class="toggles">
+        <label for="sound"><input type="checkbox" id="sound"> Tick sound</label>
+        <label for="auto"><input type="checkbox" id="auto"> Start the next question right away</label>
+      </div>
+      <span class="limit">LIMIT 1:00 / Q</span>
+    </div>
+  </section>
+
+  <aside class="panel recede">
+    <div class="card avg">
+      <div class="avg-main">
+        <span class="lbl">Average per question</span>
+        <span class="val" id="avg">–</span>
+      </div>
+      <div class="chart">
+        <svg id="chart" viewBox="0 0 300 76" preserveAspectRatio="none" aria-label="Time per question"></svg>
+        <div class="chart-empty" id="chartEmpty">Your pace chart fills in as you log questions.</div>
+        <div class="legend"><span><i class="lim"></i>1:00 limit</span><span><i></i>your average</span></div>
+      </div>
+      <div class="stats">
+        <div><span>Answered</span><b id="count">0</b></div>
+        <div><span>Over 1:00</span><b id="overCount">0</b></div>
+        <div><span>Last 5 avg</span><b id="last5">–</b></div>
+        <div><span>Total time</span><b id="total">0:00</b></div>
+      </div>
+    </div>
+
+    <div class="card log">
+      <div class="log-head">
+        <span class="lbl">Log</span>
+        <button class="clear" id="clear" type="button">Clear all &amp; restart</button>
+      </div>
+      <ol id="list"></ol>
+      <div class="empty" id="empty">No questions logged yet. Start the dial, answer the question, then press Enter again to log your time.</div>
+    </div>
+  </aside>
+</div>
+
+<script>
+(function () {
+  const LIMIT = 60000, WARN = 50000;
+  const KEY = "mcq-pace-timer-v1";
+  const CX = 150, CY = 150, R = 112, C = 2 * Math.PI * R;
+  const SVGNS = "http://www.w3.org/2000/svg";
+
+  const $ = id => document.getElementById(id);
+  const stage = $("stage"), dial = $("dial"), arc = $("arc"), tip = $("tip"), timeEl = $("time"), overby = $("overby"),
+        qlabel = $("qlabel"), action = $("action"), auto = $("auto"), sound = $("sound"), list = $("list"),
+        empty = $("empty"), clearBtn = $("clear"), chart = $("chart"), chartEmpty = $("chartEmpty"), flash = $("flash");
+
+  let state = { entries: [], runningSince: null, auto: false, sound: true };
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (saved && Array.isArray(saved.entries)) state = Object.assign(state, saved);
+  } catch (e) {}
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+
+  // 60 second ticks, longer every 5 s, numerals every 15 s
+  const ticksG = $("ticks"), ticks = [];
+  const polar = (r, i) => { const a = i / 60 * 2 * Math.PI - Math.PI / 2; return [CX + r * Math.cos(a), CY + r * Math.sin(a)]; };
+  for (let i = 0; i < 60; i++) {
+    const major = i % 5 === 0, [x1, y1] = polar(major ? 120 : 123, i), [x2, y2] = polar(131, i);
+    const l = document.createElementNS(SVGNS, "line");
+    l.setAttribute("x1", x1); l.setAttribute("y1", y1); l.setAttribute("x2", x2); l.setAttribute("y2", y2);
+    l.setAttribute("class", "tk" + (major ? " major" : ""));
+    ticksG.appendChild(l); ticks.push(l);
+  }
+  [0, 15, 30, 45].forEach(s => {
+    const [x, y] = polar(143, s), t = document.createElementNS(SVGNS, "text");
+    t.setAttribute("x", x); t.setAttribute("y", y); t.textContent = String(s).padStart(2, "0");
+    $("numerals").appendChild(t);
+  });
+  arc.style.strokeDasharray = C;
+
+  const fmt = (ms, tenths) => {
+    const s = Math.floor(ms / 1000), m = Math.floor(s / 60), ss = String(s % 60).padStart(2, "0");
+    return tenths ? `${m}:${ss}<small>.${Math.floor(ms % 1000 / 100)}</small>` : `${m}:${ss}`;
+  };
+  const fmtLong = ms => {
+    const s = Math.round(ms / 1000), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), ss = String(s % 60).padStart(2, "0");
+    return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+  };
+  const clock = t => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  let wakeLock = null;
+  async function lockScreen() {
+    try { if (navigator.wakeLock && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.addEventListener("release", () => { wakeLock = null; }); } } catch (e) {}
+  }
+
+  // Sound: a short mechanical tick each second, a lower tock once over the limit,
+  // and a two-note chime the moment the minute runs out. Audio starts on the first press.
+  let ac = null;
+  function audio() {
+    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } }
+    if (ac.state === "suspended") ac.resume().catch(() => {});
+    return ac;
+  }
+  function blip(freq, dur, vol, type, delay) {
+    const a = audio(); if (!a || !state.sound) return;
+    const t = a.currentTime + (delay || 0);
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = type || "square"; o.frequency.setValueAtTime(freq, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.002);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur + 0.02);
+  }
+  const tickSound = over => over ? blip(520, 0.05, 0.12, "square") : blip(1900, 0.025, 0.08, "square");
+  const limitChime = () => { blip(880, 0.35, 0.18, "sine"); blip(660, 0.5, 0.18, "sine", 0.18); };
+  let lastSec = -1, newRow = false;
+
+  function press() { dial.classList.add("pressed"); setTimeout(() => dial.classList.remove("pressed"), 120); }
+
+  function start(at) { audio(); lastSec = -1; state.runningSince = at ?? Date.now(); save(); lockScreen(); renderAll(); tick(); }
+
+  function toggle() {
+    press();
+    const now = Date.now();
+    if (state.runningSince == null) { start(now); return; }
+    state.entries.push({ ms: now - state.runningSince, at: now });
+    state.runningSince = null; newRow = true;
+    if (state.auto) start(now); else { save(); renderAll(); }
+  }
+
+  function discard() {
+    if (state.runningSince == null) return;
+    state.runningSince = null; save(); renderAll();
+  }
+
+  let tickKey = "";
+  function renderDial() {
+    const running = state.runningSince != null;
+    const ms = running ? Date.now() - state.runningSince : 0;
+    const over = ms >= LIMIT, warn = !over && ms >= WARN;
+    const sec = Math.floor(ms / 1000);
+    timeEl.innerHTML = fmt(ms, true);
+    stage.classList.toggle("over", over);
+    stage.classList.toggle("warn", warn);
+    overby.textContent = over ? "+" + fmt(ms - LIMIT, false) + " over" : "";
+
+    // Arc fills over the first minute; in overtime it stays full and the tip sweeps a red second lap.
+    const frac = over ? ((ms - LIMIT) % LIMIT) / LIMIT : ms / LIMIT;
+    arc.style.strokeDashoffset = over ? 0 : C * (1 - frac);
+    const a = frac * 2 * Math.PI - Math.PI / 2;
+    tip.setAttribute("cx", CX + R * Math.cos(a)); tip.setAttribute("cy", CY + R * Math.sin(a));
+    tip.style.opacity = running ? 1 : 0;
+
+    const lit = over ? (sec - 60) % 60 + 1 : (running ? sec + 1 : 0);
+    const key = lit + (over ? "o" : "");
+    if (key !== tickKey) { tickKey = key; ticks.forEach((t, i) => t.classList.toggle("on", i < lit)); }
+  }
+
+  function renderChart() {
+    const es = state.entries.slice(-40), n = es.length;
+    chartEmpty.hidden = n > 0; chart.style.display = n ? "block" : "none";
+    if (!n) return;
+    const H = 76, top = 6, ymax = Math.max(90000, ...es.map(e => e.ms));
+    const y = v => H - (v / ymax) * (H - top);
+    const slot = 300 / Math.max(n, 12), bw = slot * 0.62;
+    const avg = state.entries.reduce((s, e) => s + e.ms, 0) / state.entries.length;
+    let html = `<line class="base" x1="0" x2="300" y1="${H - .5}" y2="${H - .5}" vector-effect="non-scaling-stroke"></line>`;
+    es.forEach((e, i) => {
+      const yy = y(e.ms);
+      html += `<rect class="bar${e.ms >= LIMIT ? " over" : ""}" x="${i * slot + (slot - bw) / 2}" y="${yy}" width="${bw}" height="${H - yy}"></rect>`;
+    });
+    html += `<line class="limitln" x1="0" x2="300" y1="${y(LIMIT)}" y2="${y(LIMIT)}" vector-effect="non-scaling-stroke"></line>`;
+    html += `<line class="avgln" x1="0" x2="300" y1="${y(avg)}" y2="${y(avg)}" vector-effect="non-scaling-stroke"></line>`;
+    chart.innerHTML = html;
+  }
+
+  function renderAll() {
+    const running = state.runningSince != null;
+    const n = state.entries.length;
+    document.body.classList.toggle("running", running);
+    qlabel.textContent = "Question " + (n + 1);
+    action.innerHTML = running ? "Press <b>Enter</b> when you've answered" : "Press <b>Enter</b> to start";
+    auto.checked = !!state.auto;
+    sound.checked = state.sound !== false;
+    renderDial();
+
+    const total = state.entries.reduce((a, e) => a + e.ms, 0);
+    const overCount = state.entries.filter(e => e.ms >= LIMIT).length;
+    const avg = n ? total / n : 0;
+    const last = state.entries.slice(-5), l5 = last.length ? last.reduce((a, e) => a + e.ms, 0) / last.length : 0;
+    const avgEl = $("avg");
+    avgEl.textContent = n ? fmt(avg, false) : "–";
+    avgEl.classList.toggle("over", n > 0 && avg >= LIMIT);
+    $("count").textContent = n;
+    $("overCount").textContent = n ? `${overCount} (${Math.round(overCount / n * 100)}%)` : "0";
+    $("last5").textContent = n ? fmt(l5, false) : "–";
+    $("last5").classList.toggle("over", n > 0 && l5 >= LIMIT);
+    $("total").textContent = fmtLong(total);
+    const startedAt = n ? state.entries[0].at - state.entries[0].ms : state.runningSince;
+    $("session").textContent = startedAt ? `Session started ${clock(startedAt)} · ${n} logged` : "New session";
+    renderChart();
+
+    empty.hidden = n > 0;
+    list.innerHTML = "";
+    for (let i = n - 1; i >= 0; i--) {
+      const e = state.entries[i], isOver = e.ms >= LIMIT;
+      const li = document.createElement("li");
+      li.className = (isOver ? "over" : "") + (newRow && i === n - 1 ? " new" : "");
+      li.innerHTML = `<span class="n">Q${i + 1}</span>
+        <span class="bar"><i style="width:${Math.min(e.ms / (LIMIT * 1.5), 1) * 100}%"></i></span>
+        <span class="t">${fmt(e.ms, false)}</span>
+        <button class="del" type="button" aria-label="Delete Q${i + 1}" data-i="${i}">×</button>`;
+      list.appendChild(li);
+    }
+    newRow = false;
+  }
+
+  function beat() { dial.classList.remove("beat"); void dial.offsetWidth; dial.classList.add("beat"); }
+  function fireFlash() { flash.classList.remove("go"); void flash.offsetWidth; flash.classList.add("go"); }
+
+  let raf = null;
+  function tick() {
+    cancelAnimationFrame(raf);
+    if (state.runningSince == null) return;
+    const sec = Math.floor((Date.now() - state.runningSince) / 1000);
+    if (lastSec >= 0 && sec !== lastSec && sec > 0) {
+      if (sec * 1000 === LIMIT) { limitChime(); fireFlash(); beat(); }
+      else { tickSound(sec * 1000 > LIMIT); if (sec * 1000 > LIMIT) beat(); }
+    }
+    lastSec = sec;
+    renderDial();
+    raf = requestAnimationFrame(tick);
+  }
+
+  stage.addEventListener("click", e => { if (e.detail !== 0) toggle(); stage.blur(); });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") {
+      if ((e.target === auto || e.target === sound) && e.key === " ") return;
+      e.preventDefault();
+      if (!e.repeat) toggle();
+    } else if (e.key === "Escape") {
+      discard();
+    }
+  });
+  auto.addEventListener("change", () => { state.auto = auto.checked; save(); auto.blur(); });
+  sound.addEventListener("change", () => { state.sound = sound.checked; save(); sound.blur(); if (sound.checked) tickSound(false); });
+
+  list.addEventListener("click", e => {
+    const b = e.target.closest(".del"); if (!b) return;
+    state.entries.splice(+b.dataset.i, 1); save(); renderAll();
+  });
+
+  let armTimer = null;
+  clearBtn.addEventListener("click", () => {
+    clearBtn.blur();
+    if (!clearBtn.classList.contains("armed")) {
+      clearBtn.classList.add("armed"); clearBtn.textContent = "Click again to clear";
+      clearTimeout(armTimer);
+      armTimer = setTimeout(() => { clearBtn.classList.remove("armed"); clearBtn.textContent = "Clear all & restart"; }, 3000);
+      return;
+    }
+    clearTimeout(armTimer);
+    clearBtn.classList.remove("armed"); clearBtn.textContent = "Clear all & restart";
+    state.entries = []; state.runningSince = null; save(); renderAll();
+  });
+
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && state.runningSince != null) lockScreen(); });
+
+  window.__mcq = { state, toggle, discard, renderAll };
+  renderAll(); tick();
+})();
+</script>
+</body>
+</html>
