@@ -193,6 +193,36 @@ li .del:hover { color: var(--over); }
 li .del:focus-visible { outline: 2px solid var(--accent); }
 .empty { padding: 22px 16px; color: var(--muted); font-size: .9rem; line-height: 1.5; }
 
+/* Full-screen app layout for tablets and larger screens: fill the viewport height,
+   the dial grows to whatever space its card has, and the log takes the remaining height. */
+@media (min-width: 781px) and (min-height: 560px) and (min-aspect-ratio: 1/1),
+       (min-width: 600px) and (min-height: 860px) and (max-aspect-ratio: 1/1) {
+  html { font-size: clamp(15px, calc(0.8vw + 0.9vh), 20px); }
+  body {
+    font-size: 1rem; display: flex; flex-direction: column; padding-block: 1.75rem 1.5rem;
+    height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  }
+  .wrap { flex: 1; min-height: 0; width: 100%; max-width: 1600px; gap: 1.5rem; align-items: stretch; grid-template-rows: auto minmax(0, 1fr); }
+  .wrap > section { display: flex; flex-direction: column; min-height: 0; }
+  .stage { flex: 1; min-height: 0; container-type: size; padding: 1.5rem 1rem; gap: 1rem; }
+  .dial { width: min(92cqw, calc(100cqh - 3.5rem)); container-type: inline-size; }
+  .qlabel { font-size: 3.4cqi; }
+  .time { font-size: 21cqi; }
+  .overby { font-size: 3.8cqi; }
+  .action { font-size: 1rem; }
+  .panel { min-height: 0; grid-template-rows: auto minmax(0, 1fr); }
+  .log { display: flex; flex-direction: column; min-height: 0; }
+  .log ol { flex: 1; min-height: 0; max-height: none; }
+  .chart svg, .chart-empty { height: 5.5rem; }
+}
+/* Portrait tablet: dial on top, stats and log side by side underneath. */
+@media (min-width: 600px) and (min-height: 860px) and (max-aspect-ratio: 1/1) {
+  .wrap { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1.45fr) minmax(0, 1fr); }
+  .panel { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+  .avg { grid-template-rows: auto minmax(0, 1fr) auto; }
+  .chart { grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+  .chart svg, .chart-empty { height: 100%; min-height: 4rem; }
+}
 @media (prefers-reduced-motion: reduce) {
   .stage, .dial, .tk, .recede, .time { transition: none; }
   #flash.go, .dial.beat .glow, li.new { animation: none; }
