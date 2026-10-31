@@ -79,6 +79,13 @@ body::after {
 header.top { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: end; gap: 12px; flex-wrap: wrap; }
 .brand { display: grid; gap: 4px; }
 h1 { margin: 0; font-size: 1.1rem; font-weight: 600; letter-spacing: .02em; }
+/* Logo: MCQ:60 in the dial's digits; the colon's lower dot is the overtime red */
+h1.logo { display: flex; align-items: center; gap: .14em; font-family: var(--f-digit); font-stretch: 75%; font-size: 1.75rem; line-height: 1; letter-spacing: -.03em; }
+h1.logo b { font-weight: 600; }
+h1.logo i { font-style: normal; font-weight: 200; }
+h1.logo .colon { display: flex; flex-direction: column; gap: .22em; padding-inline: .04em; }
+h1.logo .colon span { width: .2em; height: .2em; border-radius: 50%; background: var(--fg); }
+h1.logo .colon span + span { background: var(--over); }
 .session { font-family: var(--f-label); font-size: .78rem; color: var(--muted); letter-spacing: .04em; }
 .hint { color: var(--muted); font-size: .85rem; }
 .top-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
@@ -235,7 +242,7 @@ li .del:focus-visible { outline: 2px solid var(--accent); }
 <div class="wrap">
   <header class="top">
     <div class="brand">
-      <h1>MCQ Pace Timer</h1>
+      <h1 class="logo" aria-label="MCQ Pace Timer"><b>MCQ</b><span class="colon" aria-hidden="true"><span></span><span></span></span><i>60</i></h1>
       <div class="session" id="session">New session</div>
     </div>
     <div class="top-right">
